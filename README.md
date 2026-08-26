@@ -1,0 +1,1 @@
+# PavaElectrica2026
