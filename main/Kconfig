@@ -1,0 +1,36 @@
+menu "WS2812 LED Demo Configuration"
+
+    config LED_GPIO_PIN
+        int "GPIO pin del LED WS2812"
+        default 25
+        help
+            Pin GPIO donde está conectada la tira de LEDs WS2812
+
+    config NUM_LEDS
+        int "Cantidad de LEDs en la tira"
+        default 10
+        range 1 1000
+        help
+            Número de LEDs individuales en la tira WS2812
+
+    config LED_UPDATE_SPEED_MS
+        int "Velocidad de actualización (ms)"
+        default 100
+        range 10 10000
+        help
+            Tiempo en milisegundos entre actualizaciones
+
+    config UART_PORT
+        int "Puerto UART para comunicación"
+        default 0
+        help
+            UART_NUM_0, UART_NUM_1, o UART_NUM_2
+
+    config UART_BAUD_RATE
+        int "Velocidad UART (baud)"
+        default 115200
+        range 9600 2000000
+        help
+            Velocidad de comunicación serial
+
+endmenu

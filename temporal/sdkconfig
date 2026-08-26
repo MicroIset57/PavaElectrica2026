@@ -1,0 +1,54 @@
+# Configuración de IDF (ESP-IDF defaults)
+#
+# Configuración automática del proyecto.
+# Esta puede ser regenerada automáticamente.
+#
+
+#
+# Configuración de SDK
+#
+CONFIG_IDF_TARGET="esp32"
+CONFIG_IDF_TARGET_ESP32=y
+
+#
+# Configuración de Bootloader
+#
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+#
+# Configuración de caché de memoria
+#
+CONFIG_ESP32_CACHE_OCEAN=y
+
+#
+# Hardware UART
+#
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+CONFIG_ESP_CONSOLE_UART_TX_GPIO=1
+CONFIG_ESP_CONSOLE_UART_RX_GPIO=3
+
+#
+# Configuración de nivel de log
+#
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+#
+# Configuración de FreeRTOS
+#
+CONFIG_FREERTOS_UNICORE=n
+
+#
+# Driver RMT
+#
+CONFIG_RMT_ENABLE_RX=n
+CONFIG_RMT_ENABLE_TX=y
+
+#
+# Configuración del proyecto WS2812
+#
+CONFIG_LED_GPIO_PIN=25
+CONFIG_NUM_LEDS=10
+CONFIG_LED_UPDATE_SPEED_MS=100
+CONFIG_UART_PORT=0
+CONFIG_UART_BAUD_RATE=115200
