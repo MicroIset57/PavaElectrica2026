@@ -73,6 +73,31 @@ ESP32 GND    -----> LED Strip GND
 5V PSU       -----> LED Strip +5V
 ```
 
+### Control de temperatura
+
+La versión Arduino de `src/main.cpp` usa estas conexiones:
+
+```
+DS18B20 DATA       -----> GPIO4   (resistencia de 4.7k entre DATA y 3.3V)
+OLED SDA           -----> GPIO21
+OLED SCL           -----> GPIO22
+Botón temperatura  -----> GPIO27 (otro terminal a GND)
+Pulsador principal KCD4 -> GPIO26 (otro terminal a GND)
+Entrada modulo rele HJR-3FF -> GPIO33
+```
+
+El OLED debe usar dirección I2C `0x3C`. Los botones usan `INPUT_PULLUP` y se activan conectándolos a GND. GPIO33 entrega la señal de control al modulo del rele HJR-3FF; no debe conectarse directamente a la bobina del rele, a la fuente de potencia ni al elemento calefactor. El modulo debe incluir transistor de accionamiento, diodo de proteccion y alimentacion adecuada para la bobina.
+
+El botón de temperatura recorre los objetivos de 50, 80 y 100 °C. KCD4 conmuta la fuente; al apagarla también se apagan los NeoPixel.
+
+### Monitor serie
+
+Abre el monitor a `115200` baudios para ver el arranque, las lecturas del DS18B20, las pulsaciones y el estado de la fuente y los NeoPixel:
+
+```bash
+pio device monitor --port COM3 --baud 115200
+```
+
 ### Notas importantes:
 - El pin GPIO25 puede cambiarse en configuración
 - Se recomienda usar un condensador de 1000µF entre +5V y GND cerca de la tira
@@ -96,6 +121,7 @@ ESP32 GND    -----> LED Strip GND
 
 ### 📋 General
 
+- [CODIGO.md](docs/CODIGO.md) - Explicacion del firmware Arduino, conexiones y funcionamiento
 - [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) - Resumen completo del proyecto
 - [MIGRATION.md](MIGRATION.md) - Comparación MicroPython vs C
 - [ADVANCED.md](ADVANCED.md) - Debugging y optimización avanzada
