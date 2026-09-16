@@ -81,63 +81,88 @@ bool botonPresionado(Boton &boton) {
 }
 
 uint32_t colorTemperatura(float temperatura) {
-  if (temperatura < 50.0f) {
+  if (temperatura < 68.0f) {
     return strip.Color(0, 0, 255);
   }
-  if (temperatura < 80.0f) {
-    uint8_t paso = (uint8_t)((temperatura - 50.0f) * 255.0f / 30.0f);
-    return strip.Color(paso, paso, 255 - paso);
+  if (temperatura < 140.0f) {
+    uint8_t paso = (uint8_t)((temperatura - 68.0f) * 255.0f / 72.0f);
+    return strip.Color(0, paso, 255);
   }
-  if (temperatura < 100.0f) {
-    uint8_t paso = (uint8_t)((temperatura - 80.0f) * 255.0f / 20.0f);
+  if (temperatura < 176.0f) {
+    uint8_t paso = (uint8_t)((temperatura - 140.0f) * 255.0f / 36.0f);
+    return strip.Color(paso, 255, 255 - paso);
+  }
+  if (temperatura < 194.0f) {
+    uint8_t paso = (uint8_t)((temperatura - 176.0f) * 255.0f / 18.0f);
     return strip.Color(255, 255 - paso, 0);
   }
   return strip.Color(255, 0, 0);
 }
 
+bool temperaturaValida() {
+  return temperaturaC != DEVICE_DISCONNECTED_C;
+}
+
+float temperaturaFahrenheit() {
+  return temperaturaC * 9.0f / 5.0f + 32.0f;
+}
+
+uint8_t nivelTemperatura() {
+  if (!temperaturaValida()) {
+    return 0;
+  }
+  return (uint8_t)(constrain(temperaturaFahrenheit(), 32.0f, 212.0f) /
+                   212.0f * 100.0f);
+}
+
 const char *nombreColorTemperatura(float temperatura) {
-  if (temperatura < 50.0f) {
+  if (temperatura < 68.0f) {
     return "AZUL";
   }
-  if (temperatura < 80.0f) {
-    return "AZUL/AMARILLO";
+  if (temperatura < 140.0f) {
+    return "CIAN";
   }
-  if (temperatura < 100.0f) {
+  if (temperatura < 176.0f) {
+    return "VERDE";
+  }
+  if (temperatura < 194.0f) {
     return "AMARILLO";
   }
   return "ROJO";
 }
 
 const char *nombreColorOLED(float temperatura) {
-  if (temperatura < 50.0f) {
+  if (temperatura < 30.0f) {
     return "AZUL";
   }
-  if (temperatura < 80.0f) {
-    return "TRANS";
+  if (temperatura < 60.0f) {
+    return "CIAN";
   }
-  if (temperatura < 100.0f) {
+  if (temperatura < 90.0f) {
+    return "VERDE";
+  }
+  if (temperatura < 110.0f) {
     return "AMAR";
   }
   return "ROJO";
 }
 
 void actualizarLuces() {
-  if (!fuenteEncendida || temperaturaC == DEVICE_DISCONNECTED_C) {
-    strip.clear();
-    strip.show();
-    return;
-  }
-
-  float porcentaje = constrain(temperaturaC, 0.0f, 120.0f) / 120.0f;
-  uint8_t ledsEncendidos = (uint8_t)ceil(porcentaje * NUM_LEDS);
-  uint32_t color = colorTemperatura(temperaturaC);
+  uint8_t ledsEncendidos = temperaturaValida()
+                               ? (uint8_t)ceil(nivelTemperatura() / 100.0f * NUM_LEDS)
+                               : NUM_LEDS;
+  uint32_t color = temperaturaValida() ? colorTemperatura(temperaturaFahrenheit())
+                                       : strip.Color(255, 0, 0);
+  uint32_t colorBase = temperaturaValida() ? strip.Color(3, 3, 3) : color;
   for (uint8_t led = 0; led < NUM_LEDS; led++) {
-    strip.setPixelColor(led, led < ledsEncendidos ? color : 0);
+    strip.setPixelColor(led, led < ledsEncendidos ? color : colorBase);
   }
   strip.show();
-  Serial.printf("[LEDS] %u/%u encendidos, color %s, nivel %.0f%%\n",
-                ledsEncendidos, NUM_LEDS, nombreColorTemperatura(temperaturaC),
-                porcentaje * 100.0f);
+  Serial.printf("[LEDS] %u/%u resaltados, color %s, nivel %u%%\n",
+                ledsEncendidos, NUM_LEDS,
+                temperaturaValida() ? nombreColorTemperatura(temperaturaFahrenheit())
+                                     : "ERROR",
+                nivelTemperatura());
 }
 
 void actualizarOLED() {
@@ -150,36 +175,33 @@ void actualizarOLED() {
   display.setTextWrap(false);
   display.setCursor(0, 0);
   display.setTextSize(1);
-  display.println("LOG TEMP DS18B20");
-  display.drawLine(0, 11, 127, 11, SSD1306_WHITE);
+  display.print("PAVA ELECTRICA");
+  display.setCursor(91, 0);
+  display.print(fuenteEncendida ? "ON" : "OFF");
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 
   display.setCursor(0, 18);
   display.setTextSize(2);
-  if (temperaturaC == DEVICE_DISCONNECTED_C) {
-    display.println("TEMP ERR");
+  if (!temperaturaValida()) {
+    display.print("ERROR TEMP");
   } else {
-    display.print(temperaturaC, 1);
-    display.println(" C");
+    display.print(temperaturaFahrenheit(), 1);
+    display.println(" F");
   }
 
   display.setTextSize(1);
   display.setCursor(0, 39);
-  display.print("Obj:");
-  display.print(TEMPERATURAS_SELECCIONABLES[indiceTemperatura], 0);
-  display.print("C Nivel:");
-  if (temperaturaC == DEVICE_DISCONNECTED_C) {
-    display.println("--%");
-  } else {
-    display.print((int)(constrain(temperaturaC, 0.0f, 120.0f) / 120.0f * 100.0f));
-    display.println("%");
+  display.print("OBJETIVO ");
+  display.print(TEMPERATURAS_SELECCIONABLES[indiceTemperatura] * 9.0f / 5.0f + 32.0f,
+               0);
+  display.print(" F   ");
+  display.print(temperaturaValida() ? nombreColorOLED(temperaturaFahrenheit())
+                                    : "ERROR");
+  display.drawRect(0, 51, 128, 8, SSD1306_WHITE);
+  if (temperaturaValida()) {
+    display.fillRect(2, 53, (uint8_t)(nivelTemperatura() * 124 / 100), 4,
+                     SSD1306_WHITE);
   }
-  display.setCursor(0, 53);
-  display.print("Rele:");
-  display.print(fuenteEncendida ? "ON" : "OFF");
-  display.print(" Color:");
-  display.println(temperaturaC == DEVICE_DISCONNECTED_C
-                      ? "ERR"
-                      : nombreColorOLED(temperaturaC));
   display.display();
 }
 
@@ -189,11 +211,11 @@ void leerTemperatura() {
   if (nuevaTemperatura != DEVICE_DISCONNECTED_C && nuevaTemperatura > -55.0f &&
       nuevaTemperatura < 125.0f) {
     temperaturaC = nuevaTemperatura;
-    float porcentaje = constrain(temperaturaC, 0.0f, 120.0f) / 120.0f * 100.0f;
-    Serial.printf("[LOG TEMP] %.1f Celsius | objetivo %.0f Celsius | nivel %.0f%% | rele %s | color %s\n",
-                  temperaturaC, TEMPERATURAS_SELECCIONABLES[indiceTemperatura],
-                  porcentaje, fuenteEncendida ? "ON" : "OFF",
-                  nombreColorTemperatura(temperaturaC));
+        Serial.printf("[LOG TEMP] %.1f Fahrenheit | objetivo %.0f Fahrenheit | nivel %u%% | rele %s | color %s\n",
+          temperaturaFahrenheit(),
+          TEMPERATURAS_SELECCIONABLES[indiceTemperatura] * 9.0f / 5.0f + 32.0f,
+          nivelTemperatura(), fuenteEncendida ? "ON" : "OFF",
+          nombreColorTemperatura(temperaturaFahrenheit()));
   } else {
     temperaturaC = DEVICE_DISCONNECTED_C;
     Serial.println("[LOG TEMP] ERROR: DS18B20 desconectado o lectura invalida");
@@ -249,8 +271,8 @@ void setup() {
   sensor.setWaitForConversion(true);
   Serial.printf("[TEMP] Sensores encontrados: %d\n", sensor.getDeviceCount());
   Serial.println("[TEMP] Resolucion: 9 bits | lectura cada 1 segundo");
-  Serial.printf("[TEMP] Objetivo inicial: %.0f C\n",
-                TEMPERATURAS_SELECCIONABLES[indiceTemperatura]);
+  Serial.printf("[TEMP] Objetivo inicial: %.0f F\n",
+                TEMPERATURAS_SELECCIONABLES[indiceTemperatura] * 9.0f / 5.0f + 32.0f);
   leerTemperatura();
   ultimaLectura = millis();
   actualizarOLED();
@@ -260,8 +282,8 @@ void setup() {
 void loop() {
   if (botonPresionado(botonTemperatura)) {
     indiceTemperatura = (indiceTemperatura + 1) % NUM_TEMPERATURAS;
-    Serial.printf("[BOTON TEMP] Nuevo objetivo: %.0f C\n",
-                  TEMPERATURAS_SELECCIONABLES[indiceTemperatura]);
+    Serial.printf("[BOTON TEMP] Nuevo objetivo: %.0f F\n",
+            TEMPERATURAS_SELECCIONABLES[indiceTemperatura] * 9.0f / 5.0f + 32.0f);
     actualizarOLED();
   }
 

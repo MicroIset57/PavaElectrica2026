@@ -88,7 +88,7 @@ Entrada modulo rele HJR-3FF -> GPIO33
 
 El OLED debe usar dirección I2C `0x3C`. Los botones usan `INPUT_PULLUP` y se activan conectándolos a GND. GPIO33 entrega la señal de control al modulo del rele HJR-3FF; no debe conectarse directamente a la bobina del rele, a la fuente de potencia ni al elemento calefactor. El modulo debe incluir transistor de accionamiento, diodo de proteccion y alimentacion adecuada para la bobina.
 
-El botón de temperatura recorre los objetivos de 50, 80 y 100 °C. KCD4 conmuta la fuente; al apagarla también se apagan los NeoPixel.
+El botón de temperatura recorre los objetivos de 50, 80 y 100 °C. KCD4 conmuta la fuente; la pantalla OLED y los NeoPixel permanecen encendidos para mostrar el estado aunque la fuente este apagada.
 
 ### Monitor serie
 
