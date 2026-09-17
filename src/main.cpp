@@ -28,9 +28,6 @@
 const float TEMPERATURAS_SELECCIONABLES[] = {50.0f, 80.0f, 100.0f};
 const uint8_t NUM_TEMPERATURAS = sizeof(TEMPERATURAS_SELECCIONABLES) /
                                  sizeof(TEMPERATURAS_SELECCIONABLES[0]);
-const unsigned long INTERVALO_LECTURA_MS = 1000;
-const unsigned long INTERVALO_OLED_MS = 1000;
-const unsigned long INTERVALO_LEDS_MS = 30;
 const unsigned long REBOTE_MS = 40;
 
 CRGB leds[NUM_LEDS];
@@ -40,22 +37,22 @@ DallasTemperature sensor(&oneWire);
 
 float temperaturaC = DEVICE_DISCONNECTED_C;
 uint8_t indiceTemperatura = 1;
-bool fuenteEncendida = false;
+bool pavaEncendida = false;
 bool oledDisponible = false;
 uint8_t direccionOLED = 0;
-unsigned long ultimaLectura = 0;
-unsigned long ultimaActualizacionOLED = 0;
+bool conversionEnCurso = false;
+unsigned long inicioConversion = 0;
+uint16_t esperaConversionMs = 750; // lo ajusta setup() segun la resolucion
 
-struct Boton
-{
-  uint8_t pin;
-  bool estadoEstable;
-  bool ultimaLectura;
-  unsigned long cambio;
-};
+// struct Boton
+// {
+//   uint8_t pin;
+//   bool estadoEstable;
+//   unsigned long cambio;
+// };
 
-Boton botonTemperatura = {PIN_BOTON_TEMPERATURA, HIGH, HIGH, 0};
-Boton botonFuente = {PIN_KCD4, HIGH, HIGH, 0};
+// Boton botonTemperatura = {PIN_BOTON_TEMPERATURA, HIGH, HIGH, 0};
+// Boton botonFuente = {PIN_KCD4, HIGH, HIGH, 0};
 
 uint8_t detectarDireccionOLED()
 {
@@ -71,27 +68,11 @@ uint8_t detectarDireccionOLED()
   return 0;
 }
 
-bool botonPresionado(Boton &boton)
-{
-  bool lectura = digitalRead(boton.pin);
-  if (lectura != boton.ultimaLectura)
-  {
-    boton.cambio = millis();
-    boton.ultimaLectura = lectura;
-  }
-
-  if ((millis() - boton.cambio) > REBOTE_MS && lectura != boton.estadoEstable)
-  {
-    boton.estadoEstable = lectura;
-    return lectura == LOW;
-  }
-  return false;
-}
-
 // This function draws rainbows with an ever-changing,
 // widely-varying set of parameters.
-void pride()
+void actualizarCuadroLeds()
 {
+
   static uint16_t sPseudotime = 0;
   static uint16_t sLastMillis = 0;
   static uint16_t sHue16 = 0;
@@ -130,11 +111,32 @@ void pride()
 
     nblend(leds[pixelnumber], newcolor, 64);
   }
+  FastLED.show();
 }
 
-void leerTemperatura()
+void actualizarOLED()
+{
+  // actualizar el display
+}
+
+// Etapa 1: dispara la conversion y vuelve enseguida (no espera los ~94 ms).
+void iniciarLecturaTemperatura()
 {
   sensor.requestTemperatures();
+  inicioConversion = millis();
+  conversionEnCurso = true;
+}
+
+// Etapa 2: cuando el sensor ya termino, se lee el scratchpad (~6 ms).
+// 9 bits -> 93.75 ms de conversion en el DS18B20 (margen: 110 ms)
+void completarLecturaTemperatura()
+{
+  // conversionEnCurso solo dice "la pedi"; el sensor no avisa cuando termina,
+  // asi que hay que darle el tiempo que garantiza el datasheet.
+  if (!conversionEnCurso || (millis() - inicioConversion) < esperaConversionMs)
+    return;
+  conversionEnCurso = false;
+
   float nuevaTemperatura = sensor.getTempCByIndex(0);
   if (nuevaTemperatura != DEVICE_DISCONNECTED_C && nuevaTemperatura > -55.0f &&
       nuevaTemperatura < 125.0f)
@@ -143,7 +145,7 @@ void leerTemperatura()
     float porcentaje = constrain(temperaturaC, 0.0f, 120.0f) / 120.0f * 100.0f;
     Serial.printf("[LOG TEMP] %.1f grados | objetivo %.0f grados | nivel %.0f%% | rele %s\n",
                   temperaturaC, TEMPERATURAS_SELECCIONABLES[indiceTemperatura],
-                  porcentaje, fuenteEncendida ? "ON" : "OFF");
+                  porcentaje, pavaEncendida ? "ON" : "OFF");
   }
   else
   {
@@ -194,51 +196,55 @@ void setup()
   //--sensor de temperatura DS18B20--
   sensor.begin();
   sensor.setResolution(9);
-  sensor.setWaitForConversion(true);
+  esperaConversionMs = sensor.millisToWaitForConversion(); // 9 bits -> 94 ms
+  sensor.setWaitForConversion(false); // lectura no bloqueante: no frena los LEDs
   Serial.printf("[TEMP] Sensores encontrados: %d\n", sensor.getDeviceCount());
   Serial.println("[TEMP] Resolucion: 9 bits | lectura cada 1 segundo");
   Serial.printf("[TEMP] Objetivo inicial: %.0f C\n",
                 TEMPERATURAS_SELECCIONABLES[indiceTemperatura]);
-  leerTemperatura();
-  ultimaLectura = millis();
-  // actualizarOLED();
+  iniciarLecturaTemperatura();
+  actualizarOLED();
   Serial.println("[SISTEMA] Control de temperatura iniciado");
 }
 
 void loop()
 {
-  if (botonPresionado(botonTemperatura))
+  // if (botonPresionado(botonTemperatura))
+  // {
+  //   indiceTemperatura = (indiceTemperatura + 1) % NUM_TEMPERATURAS;
+  //   Serial.printf("[BOTON TEMP] Nuevo objetivo: %.0f C\n",
+  //                 TEMPERATURAS_SELECCIONABLES[indiceTemperatura]);
+  //   // actualizarOLED();
+  // }
+
+  // if (botonPresionado(botonFuente))
+  // {
+  //   pavaEncendida = !pavaEncendida;
+  //   digitalWrite(PIN_RELE_HJR3FF,
+  //                pavaEncendida ? RELE_ACTIVO : !RELE_ACTIVO);
+  //   Serial.printf("[KCD4] Pulsacion detectada -> rele HJR-3FF %s, pava %s\n",
+  //                 pavaEncendida ? "ON" : "OFF",
+  //                 pavaEncendida ? "ON" : "OFF");
+
+  //   // actualizarOLED();
+  // }
+
+  if (!conversionEnCurso)
   {
-    indiceTemperatura = (indiceTemperatura + 1) % NUM_TEMPERATURAS;
-    Serial.printf("[BOTON TEMP] Nuevo objetivo: %.0f C\n",
-                  TEMPERATURAS_SELECCIONABLES[indiceTemperatura]);
-    // actualizarOLED();
+    EVERY_N_MILLIS(1000)
+    {
+      iniciarLecturaTemperatura();
+    }
+  }
+  completarLecturaTemperatura();
+
+  EVERY_N_MILLIS(1000)
+  {
+    actualizarOLED();
   }
 
-  if (botonPresionado(botonFuente))
+  EVERY_N_MILLIS(30)
   {
-    fuenteEncendida = !fuenteEncendida;
-    digitalWrite(PIN_RELE_HJR3FF,
-                 fuenteEncendida ? RELE_ACTIVO : !RELE_ACTIVO);
-    Serial.printf("[KCD4] Pulsacion detectada -> rele HJR-3FF %s, pava %s\n",
-                  fuenteEncendida ? "ON" : "OFF",
-                  fuenteEncendida ? "ON" : "OFF");
-
-    // actualizarOLED();
+    actualizarCuadroLeds();
   }
-
-  unsigned long ahora = millis();
-  if (ahora - ultimaLectura >= INTERVALO_LECTURA_MS)
-  {
-    ultimaLectura = ahora;
-    leerTemperatura();
-  }
-  if (ahora - ultimaActualizacionOLED >= INTERVALO_OLED_MS)
-  {
-    ultimaActualizacionOLED = ahora;
-    // actualizarOLED();
-  }
-
-  pride();
-  FastLED.show();
 }
