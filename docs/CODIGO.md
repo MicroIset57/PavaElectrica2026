@@ -67,7 +67,7 @@ El codigo considera que el rele se activa con nivel `HIGH`. Si el modulo trabaja
 - `ultimaLectura`: controla el intervalo entre lecturas del sensor.
 - `ultimaActualizacionOLED`: controla la frecuencia de refresco del OLED.
 
-Los objetivos disponibles son:
+Los objetivos internos se conservan en Celsius, pero la interfaz muestra los valores convertidos a Fahrenheit:
 
 ```cpp
 {50.0f, 80.0f, 100.0f}
@@ -83,11 +83,11 @@ La funcion `leerTemperatura()` solicita una medicion al sensor y obtiene el resu
 sensor.getTempCByIndex(0)
 ```
 
-La funcion trabaja en Celsius. Se aceptan valores entre -55 y 125 grados Celsius, que corresponden al rango normal del DS18B20. Si el sensor esta desconectado o entrega un valor invalido:
+El DS18B20 entrega la lectura en Celsius y el firmware la convierte a Fahrenheit para el color, el OLED y los mensajes. Se aceptan valores entre -55 y 125 grados Celsius, que corresponden al rango normal del DS18B20. Si el sensor esta desconectado o entrega un valor invalido:
 
 - Se muestra `Sensor ERR` en el OLED.
 - Se envia un error al monitor serie.
-- Se apagan los NeoPixel.
+- Los NeoPixel permanecen encendidos en rojo para indicar el error.
 
 La temperatura se actualiza cada segundo. El sensor se configura a 9 bits para que la conversion tarde aproximadamente 94 ms y no retrase el intervalo de lectura. Al iniciar, se realiza una primera lectura inmediatamente.
 
@@ -95,14 +95,17 @@ La temperatura se actualiza cada segundo. El sensor se configura a 9 bits para q
 
 La funcion `colorTemperatura()` selecciona el color segun la temperatura:
 
-| Temperatura | Color |
+| Temperatura | Color aproximado |
 |---:|---|
-| Menor de 50 C | Azul |
-| 50 a menor de 80 C | Transicion azul a amarillo |
-| 80 a menor de 100 C | Amarillo a rojo |
-| 100 C o mas | Rojo |
+| 0 C | Azul |
+| 30 C | Cian |
+| 60 C | Verde |
+| 90 C | Amarillo |
+| 120 C o mas | Rojo |
 
-La cantidad de LEDs encendidos tambien representa el nivel de temperatura. El calculo usa un rango de 0 a 120 C:
+El color cambia suavemente entre esos puntos a medida que aumenta la temperatura.
+
+La cantidad de LEDs resaltados representa el nivel de temperatura. Todos los NeoPixel permanecen encendidos: los que quedan fuera del nivel usan una luz base tenue. El calculo usa un rango de 0 a 120 C:
 
 ```text
 nivel = temperatura / 120
@@ -110,10 +113,7 @@ nivel = temperatura / 120
 
 Por ejemplo, una temperatura de 60 C enciende aproximadamente el 50 % de la tira.
 
-Los LEDs se apagan cuando:
-
-- La fuente esta apagada.
-- El DS18B20 no entrega una lectura valida.
+La fuente puede estar apagada sin afectar la visualizacion de los NeoPixel. Si el DS18B20 no entrega una lectura valida, toda la tira se muestra en rojo.
 
 ## 7. Funcion de los botones
 
@@ -135,13 +135,13 @@ Cada pulsacion valida en GPIO26 cambia el estado del rele HJR-3FF y, por lo tant
 OFF -> ON -> OFF
 ```
 
-Cuando cambia el estado, el programa actualiza GPIO33, los NeoPixel y el OLED.
+Cuando cambia el estado, el programa actualiza GPIO33 y el OLED. La tira mantiene su visualizacion de temperatura independientemente del estado de la fuente.
 
 Los botones tienen una rutina antirrebote de 40 ms para evitar varias detecciones por una sola pulsacion.
 
 ## 8. Informacion del OLED
 
-El OLED usa la direccion I2C `0x3C` y muestra:
+El OLED usa la direccion I2C `0x3C` y muestra la temperatura en Fahrenheit:
 
 - Nombre del sistema.
 - Temperatura actual en Celsius.
@@ -176,7 +176,7 @@ pio device monitor --port COM3 --baud 115200
 
 1. Inicia el puerto serie.
 2. Configura botones y salida de la fuente.
-3. Apaga la fuente y los NeoPixel.
+3. Apaga la fuente y prepara la visualizacion de los NeoPixel.
 4. Inicializa la tira NeoPixel.
 5. Inicializa el OLED por I2C.
 6. Inicializa el DS18B20.
