@@ -249,21 +249,99 @@ void actualizarCuadroLeds()
   FastLED.show();
 }
 
-// Escribe una linea completa de 16 caracteres en la fila indicada, y solo si
-// el texto cambio: cada linea cuesta ~6 ms de I2C y no hay que gastarlos al
-// pedo. El relleno con espacios borra lo que hubiera antes (u8x8 no tiene
-// buffer, asi se evita el parpadeo de un clear() general).
-void dibujarLineaOLED(uint8_t fila, uint8_t ranura, const char *texto)
+// u8x8 dibuja de a celdas de 8x8 px: la pantalla es una grilla de 16x8.
+// La font 1x2 gasta 1 celda de ancho (16 caracteres por linea) y la 2x2 gasta
+// 2 (solo 8). Las dos miden 16 px de alto, y por eso se pueden mezclar en la
+// misma banda de dos filas sin que se desalineen.
+// FONT_CHICA mide 8x16 px (1 celda de ancho, 2 filas de alto). Dibujada con
+// draw2x2String() la libreria le duplica cada pixel: pasa a 16x32 px, o sea
+// 2 celdas de ancho por 4 filas de alto. Ese es el numero grande.
+// FONT_MINI mide 8x8 px: una celda justa, y con ella se arma el pie.
+#define FONT_CHICA u8x8_font_7x14B_1x2_f
+#define FONT_MINI u8x8_font_pxplusibmcga_f // 8x8, el grado tambien en el 176
+
+const uint8_t COLUMNAS_OLED = 16;
+
+// Borra un rectangulo de celdas. Usa la font de 8x8 porque es la unica que
+// permite apuntar a una fila suelta; con la de 8x16 el borrado va de a dos.
+void limpiarCeldas(uint8_t x, uint8_t fila, uint8_t ancho, uint8_t alto)
 {
-  static char cache[4][17] = {{0}, {0}, {0}, {0}};
-  char linea[17];
-  snprintf(linea, sizeof(linea), "%-16s", texto);
+  if (ancho == 0)
+  {
+    return;
+  }
+  if (ancho > COLUMNAS_OLED)
+  {
+    ancho = COLUMNAS_OLED;
+  }
+  char buf[COLUMNAS_OLED + 1];
+  memset(buf, ' ', ancho);
+  buf[ancho] = '\0';
+  u8x8.setFont(FONT_MINI);
+  for (uint8_t f = 0; f < alto; f++)
+  {
+    u8x8.drawString(x, fila + f, buf);
+  }
+}
+
+// Centra el texto rellenando la linea entera a 16 celdas. El relleno cumple
+// doble funcion: centra y borra lo anterior, que es justo lo que hace falta
+// cuando el texto nuevo es mas corto que el que estaba. Solo manda por I2C si
+// la linea cambio (~6 ms cada una, no hay que gastarlos al pedo).
+void dibujarCentrado(uint8_t fila, uint8_t ranura, const char *texto)
+{
+  static char cache[3][COLUMNAS_OLED + 1] = {{0}, {0}, {0}};
+  char linea[COLUMNAS_OLED + 1];
+  uint8_t largo = strlen(texto);
+  if (largo > COLUMNAS_OLED)
+  {
+    largo = COLUMNAS_OLED;
+  }
+  memset(linea, ' ', COLUMNAS_OLED);
+  memcpy(linea + (COLUMNAS_OLED - largo) / 2, texto, largo);
+  linea[COLUMNAS_OLED] = '\0';
+
   if (strcmp(linea, cache[ranura]) == 0)
   {
     return;
   }
   strcpy(cache[ranura], linea);
+  u8x8.setFont(FONT_MINI);
   u8x8.drawString(0, fila, linea);
+}
+
+// Banda superior (filas 0-3): el numero al doble de tamanio, con "Agua" y el
+// grado en chica a los costados. Las etiquetas van en la fila 1 para quedar
+// centradas contra los 32 px del numero.
+// Ancho en celdas: "Agua" = 4 | "25.6" duplicado = 8 | "\260C" = 2  -> 14 de 16
+// El peor caso es "100.0": 4 + 10 + 2 = 16 justo. Entra siempre, aun hirviendo.
+void dibujarBandaTemperatura(const char *numero)
+{
+  static char cache[12] = "";
+  static uint8_t anchoPrevio = 0;
+  if (strcmp(numero, cache) == 0)
+  {
+    return;
+  }
+  snprintf(cache, sizeof(cache), "%s", numero);
+
+  uint8_t celdasNumero = strlen(numero) * 2; // duplicada: 2 celdas por caracter
+  uint8_t ancho = 4 + celdasNumero + 2;
+  uint8_t x = (ancho >= COLUMNAS_OLED) ? 0 : (COLUMNAS_OLED - ancho) / 2;
+
+  // Solo hay que barrer la banda cuando cambia el ancho (al cruzar 99.9 a
+  // 100.0). Si el largo es el mismo, cada glifo pisa por completo sus propias
+  // celdas y no queda basura: asi se evita el parpadeo de borrar y redibujar.
+  if (ancho != anchoPrevio)
+  {
+    limpiarCeldas(0, 0, COLUMNAS_OLED, 4);
+    anchoPrevio = ancho;
+  }
+
+  u8x8.setFont(FONT_CHICA);
+  u8x8.drawString(x, 1, "Agua");
+  u8x8.draw2x2String(x + 4, 0, numero); // duplica la font activa
+  u8x8.drawString(x + 4 + celdasNumero, 1, "\260C");
 }
 
 // Cuarta linea del display: en que anda el equipo. Entra en 16 caracteres.
@@ -318,33 +396,40 @@ void actualizarOLED()
   if (!pantallaLista)
   {
     u8x8.clearDisplay(); // borra el cartel de bienvenida
-    u8x8.setFont(u8x8_font_7x14B_1x2_f);
     pantallaLista = true;
   }
 
-  // Ojo con el simbolo de grado: va en octal ("\260" = 176). Escrito como
-  // "\xB0C" el compilador se comeria la 'C' como parte del numero hexadecimal.
+  // Filas 0-1: la temperatura del agua, en grande.
   if (temperaturaC == DEVICE_DISCONNECTED_C)
   {
-    snprintf(texto, sizeof(texto), "Agua --.-\260C");
+    snprintf(texto, sizeof(texto), "--.-");
   }
   else
   {
-    snprintf(texto, sizeof(texto), "Agua %4.1f\260C", temperaturaC);
+    snprintf(texto, sizeof(texto), "%.1f", temperaturaC);
   }
-  dibujarLineaOLED(1, 0, texto);
+  dibujarBandaTemperatura(texto);
 
-  if (estado != EST_REPOSO)
+  // Fila 4 queda vacia como separacion. Filas 5, 6 y 7: el pie, en 8x8.
+  // El objetivo solo se muestra cuando hay un proceso en juego.
+  // Ojo con el simbolo de grado: va en octal ("\260" = 176). Escrito como
+  // "\xB0C" el compilador se comeria la 'C' como parte del numero hexadecimal.
+  // El %3.0f deja el ancho fijo, asi la linea no se corre al pasar de 90 a 100.
+  if (estado == EST_REPOSO)
   {
-    snprintf(texto, sizeof(texto), "Llevar a %4.0f\260C", objetivoC());
-    dibujarLineaOLED(2, 1, texto);
+    dibujarCentrado(5, 0, "");
+  }
+  else
+  {
+    snprintf(texto, sizeof(texto), "Llevar a %3.0f\260C", objetivoC());
+    dibujarCentrado(5, 0, texto);
   }
 
-  // snprintf(texto, sizeof(texto), "%s", pavaEncendida ? "ENCENDIDO" : "APAGADO");
-  // dibujarLineaOLED(4, 2, texto);
+  // snprintf(texto, sizeof(texto), "PAVA %s", pavaEncendida ? "ON" : "OFF");
+  // dibujarCentrado(6, 1, texto);
 
   textoEstado(texto, sizeof(texto));
-  dibujarLineaOLED(6, 3, texto);
+  dibujarCentrado(7, 2, texto);
 }
 
 // Etapa 1: dispara la conversion y vuelve enseguida (no espera los ~94 ms).
@@ -571,12 +656,12 @@ void setup()
   Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
   u8x8.setBusClock(400000); // antes de begin(): I2C rapido = menos bloqueo
   u8x8.begin();
+  u8x8.setFlipMode(1); // el display esta montado al reves: gira todo 180 grados
   u8x8.setFont(u8x8_font_px437wyse700a_2x2_r);
   u8x8.drawString(1, 0, "ISET 57");
   u8x8.drawString(3, 3, "2026");
   finBienvenida = millis() + DURACION_BIENVENIDA_MS;
-  // dejo preparada una font para siempre...
-  u8x8.setFont(u8x8_font_7x14B_1x2_f);
+  // Ya no se deja una font fija: actualizarOLED() la cambia segun la linea.
 
   //--leds NeoPixel--
   FastLED.addLeds<LED_TYPE, PIN_NEOPIXEL, COLOR_ORDER>(leds, NUM_LEDS)
